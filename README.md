@@ -6,11 +6,11 @@ Dedong Xie
 ## Project proposal
 CSC258 Project proposal
 
-1.	The type of project
-    1.Individual project
-I will do the project myself.
-(Why not looking for a partner? Time zone differences + I feel myself suitable for doing it on my own (doing so individually will be more challenging but I will try to make it)
-    2.10000% myself :D
+1.  The type of project
+    1. Individual project
+        - I will do the project myself.
+        - (Why not looking for a partner? Time zone differences + I feel myself suitable for doing it on my own (doing so individually will be more challenging but I will try to make it)
+    2. 10000% myself :D
 2.	Description of game
     1.	Basic game rules
         1.	Spacecraft moving on a rectangular game area, moves controlled by input from keyboard.
