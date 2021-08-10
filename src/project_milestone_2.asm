@@ -76,7 +76,7 @@ main:
 	jal	eraseSpaceship
 	jal	eraseStatusBar
 	jal	collisionAnimation
-	beqz	$s1, endGame			# if health == 0, end the game
+	blez	$s1, endGame			# if health <= 0, end the game
 	jal	getInput
 	jal	updateObstacle
 	b 	gameLoop
@@ -101,7 +101,7 @@ initializeMemory:				# initialize memory, set start values
 	li	$t0, 14
 	sw	$t0, shipRow			# shipRow = 14
 
-	li	$s2, 1				# difficulti = 1
+	li	$s2, 1				# difficulty = 1
 	li	$s3, 0				# damage = 0
 	
 	initInitObstacleLoop:
@@ -735,6 +735,8 @@ drawObstacle:
 	lw	$t8, obstacleRow($t6)
 	lw	$t9, obstacleColumn($t6)
 	
+	bge	$t9, 32, addIDrawObstacleLoop
+	
 	sll	$t8, $t8, 7
 	sll	$t9, $t9, 2
 	add	$t0, $t8, $t9
@@ -1222,12 +1224,12 @@ updateObstacle:
 	
 		addi	$t4, $a0, 0		# get row position in $t4
 		
-		#li 	$v0, 42         	# Service 42, random int range
-		#li 	$a0, 0          	# Select random generator 0
-		#addi	$a1, $0, 0		# Biggest possible type will be difficulty - 1
-		#syscall            		# Generate random int (returns in $a0)
+		li 	$v0, 42         	# Service 42, random int range
+		li 	$a0, 0          	# Select random generator 0
+		addi	$a1, $s2, 0		# Biggest possible type will be difficulty - 1
+		syscall            		# Generate random int (returns in $a0)
 	
-		addi	$t5, $0, 0		# get type in $t5
+		addi	$t5, $a0, 0		# get type in $t5
 		
 		sw	$t5, obstacleType($t3)
 		li	$t6, 31
@@ -1256,8 +1258,57 @@ collisionAnimation:
 	add	$t0, $t0, $t1			# calculate the start point of printing for spaceship
 	add	$t0, $t0, $t2
 	
+	li	$v0, 1
+	addi	$a0, $s3, 0
+	syscall
+	
+	li	$v0, 11
+	li	$a0, ' '
+	syscall
+	
+	bge	$s3, 2, fullDamage
+	
+	li 	$v0, 42         		# Service 42, random int range
+	li 	$a0, 1          		# Select random generator 0
+	li	$a1, 3				# Biggest possible damage will be 2: 50% of chance getting half damage
+	syscall            			# Generate random int (returns in $a0)
+	
+	addi	$s3, $a0, 0			# store the damage
+	bgt	$s3, 1, fullDamage		# if gazing case happened, show different animation and only reduce health by 1
+
+	halfDamage:
 	li	$t1, 0xffffff			# $t1 stores the light grey color code
-	li	$t2, 0xfffd00			# $t2 stores the dark grey color code
+	li	$t2, 0xffffff			# $t2 stores the dark grey color code
+	sw	$t2, 4($t0)			# paint the unit on row 0, column 1, color 2
+	sw	$t2, 8($t0)			# paint the unit on row 0, column 2, color 2
+	sw	$t1, 128($t0)			# paint the unit on row 1, column 0, color 1
+	sw	$t1, 132($t0)			# paint the unit on row 1, column 1, color 1
+	sw	$t1, 136($t0)			# paint the unit on row 1, column 2, color 1
+	sw	$t1, 140($t0)			# paint the unit on row 1, column 3, color 1
+	sw	$t1, 256($t0)			# paint the unit on row 2, column 0, color 1
+	sw	$t1, 260($t0)			# paint the unit on row 2, column 1, color 1
+	sw	$t1, 264($t0)			# paint the unit on row 2, column 2, color 1
+	sw	$t1, 388($t0)			# paint the unit on row 3, column 1, color 1
+	
+	li 	$v0, 32				# sleep syscall
+	li 	$a0, 100			# sleep 0.1 second 
+	syscall
+						# erase the ship
+	sw	$0, 4($t0)			# paint the unit on row 0, column 1, color 2
+	sw	$0, 8($t0)			# paint the unit on row 0, column 2, color 2
+	sw	$0, 128($t0)			# paint the unit on row 1, column 0, color 1
+	sw	$0, 132($t0)			# paint the unit on row 1, column 1, color 1
+	sw	$0, 136($t0)			# paint the unit on row 1, column 2, color 1
+	sw	$0, 140($t0)			# paint the unit on row 1, column 3, color 1
+	sw	$0, 256($t0)			# paint the unit on row 2, column 0, color 1
+	sw	$0, 260($t0)			# paint the unit on row 2, column 1, color 1
+	sw	$0, 264($t0)			# paint the unit on row 2, column 2, color 1
+	sw	$0, 388($t0)			# paint the unit on row 3, column 1, color 1
+	j	endAnimation0
+
+	fullDamage:	
+	li	$t1, 0xff00ff			# $t1 stores the light grey color code
+	li	$t2, 0xff0000			# $t2 stores the dark grey color code
 	sw	$t2, 4($t0)			# paint the unit on row 0, column 1, color 2
 	sw	$t2, 8($t0)			# paint the unit on row 0, column 2, color 2
 	sw	$t1, 128($t0)			# paint the unit on row 1, column 0, color 1
@@ -1284,10 +1335,19 @@ collisionAnimation:
 	sw	$0, 264($t0)			# paint the unit on row 2, column 2, color 1
 	sw	$0, 388($t0)			# paint the unit on row 3, column 1, color 1
 	
+	li	$s3, 2
+	
+	endAnimation0:
+	li	$v0, 1
+	addi	$a0, $s3, 0
+	syscall
+	
+	li	$v0, 11
+	li	$a0, '\n'
+	syscall
+	endAnimation:
 	sub	$s1, $s1, $s3			# reduce health
 	li	$s3, 0
-	
-	endAnimation:
 	jr	$ra				# return;
 
 #################################################

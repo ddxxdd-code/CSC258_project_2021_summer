@@ -38,6 +38,7 @@
 # playerHealth:	$s1
 # difficulty:	$s2
 # damage:	$s3
+# round:	$s4
 # score:	$s5
 
 .data
@@ -47,7 +48,10 @@
 	obstacleType:	.word 	0:16
 	obstacleRow:	.word	0:32
 	obstacleColumn:	.word	0:32
-	
+	levelScore:	.word	17, 31, 43, 59, 71, 83, 97
+	startNotes:	.word	60, 62, 64, 60
+	endNotes:	.word	67, 65, 64, 62, 60
+	endNotesDur:	.word	200, 200, 200, 200, 500
 .text
 #################################################
 # main function
@@ -58,8 +62,23 @@ main:
 	jal	initializeMemory		# initialize memory
 	jal	drawStartScreen
 	jal	initializeObstacle
+	li	$t0, 0				# start to play note
 	
 	getStartSignal:				# wait until any key is pressed to start the game
+	blt	$t0, 16, playStartNotes
+	li	$t0, 0
+	playStartNotes:
+	li	$v0, 33				# play start music
+	lw	$a0, startNotes($t0)
+	li	$a1, 300
+	li	$a2, 0
+	li	$a3, 100
+	syscall
+	li	$v0, 32
+	li	$a0, 150
+	syscall
+	addi	$t0, $t0, 4
+	
 	li 	$t9, 0xffff0000
 	lw 	$t8, 0($t9)
 	bne 	$t8, 1, getStartSignal
@@ -68,22 +87,67 @@ main:
 	
 	gameLoop:				# in each game loop, draw ship, draw obstacles while detecting collision, 
 						# sleep and get input
+	addi	$s4, $s4, 1			# record new round, round number += 1
 	jal	drawSpaceship
 	jal	drawObstacle
 	jal	drawStatusBar
-	jal	gameSleep
+	
+	li	$v0, 32				# sleep for 100ms
+	li	$a0, 100
+	syscall
+	
 	jal	eraseObstacle
 	jal	eraseSpaceship
 	jal	eraseStatusBar
 	jal	collisionAnimation
-	beqz	$s1, endGame			# if health == 0, end the game
+	blez	$s1, endGame			# if health <= 0, end the game
+	bge	$s2, 8, endGame			# if the highest difficulty is archieved, end the game
+	beq	$s4, 100, levelUpPoint		# if round == 100, level up
 	jal	getInput
 	jal	updateObstacle
-	b 	gameLoop
-
+	j 	gameLoop
+	
+	levelUpPoint:
+	jal	drawLevelUpScreen
+	
+	li	$v0, 33				# play loud high C on level up
+	li	$a0, 72
+	li	$a1, 100
+	li	$a2, 0
+	li	$a3, 120
+	syscall
+	
+	li	$v0, 32				# sleep to keep screen for 200ms
+	li	$a0, 200
+	syscall
+	
+	jal	eraseLevelUpScreen
+	addi	$s2, $s2, 1			# level up, difficulty + 1
+	li	$s4, 0				# start counting again
+	jal	addNewObstacles
+	jal	getInput
+	jal	updateObstacle
+	j 	gameLoop
+	
 	endGame:
 	jal	drawEndScreen			# draw end screen and exit
-	li	$v0, 10				# exit()
+	
+	li	$t0, 0				# play end notes
+	condPlayEndNotes:
+	bge	$t0, 20, endPlayEndNotes
+	li	$v0, 33				# play end music
+	lw	$a0, endNotes($t0)
+	lw	$a1, endNotesDur($t0)
+	li	$a2, 0
+	li	$a3, 100
+	syscall
+	li	$v0, 32
+	li	$a0, 150
+	syscall
+	addi	$t0, $t0, 4
+	j	condPlayEndNotes
+	endPlayEndNotes:
+	li	$v0, 10
 	syscall
 
 #################################################
@@ -101,7 +165,7 @@ initializeMemory:				# initialize memory, set start values
 	li	$t0, 14
 	sw	$t0, shipRow			# shipRow = 14
 
-	li	$s2, 1				# difficulti = 1
+	li	$s2, 1				# difficulty = 1
 	li	$s3, 0				# damage = 0
 	
 	initInitObstacleLoop:
@@ -170,6 +234,37 @@ initializeObstacle:
 	endRandObstacleLoop:
 	jr	$ra
 	
+addNewObstacles:
+	initAddNewLoop:
+	addi	$t0, $s2, 0				# initialize
+	sll	$t0, $t0, 1				# initially, start place = 2*dificulty
+	addi	$t3, $t0, 2				# $t3 hold the end value
+	condAddNewLoop:
+	bge	$t0, $t3, endAddNewLoop
+	bodyAddNewLoop:
+	li 	$v0, 42         	# Service 42, random int range
+	li 	$a0, 32          	# Select random generator 32
+	li 	$a1, 64	   		# Select upper bound of random number		
+	syscall            		# Generate random int (returns in $a0)
+
+	addi	$t5, $a0, 0		# get column position in $t5
+	
+	li 	$v0, 42         	# Service 42, random int range
+	li 	$a0, 0          	# Select random generator 0
+	li 	$a1, 26	   		# Select upper bound of random number
+	syscall            		# Generate random int (returns in $a0)
+	
+	addi	$t6, $a0, 0		# get row position in $t6
+
+	sll	$t1, $t0, 2		# $t1 = 4$t0, offset = 4*i, store the corresponding type and positions
+	li	$t2, 1			# fixed to generate type 2 obstacles
+	sw	$t2, obstacleType($t1)
+	sw	$t5, obstacleColumn($t1)
+	sw	$t6, obstacleRow($t1)
+	addi	$t0, $t0, 1
+	j	condAddNewLoop
+	endAddNewLoop:
+	jr	$ra
 #################################################
 # drawing functions
 
@@ -676,6 +771,332 @@ eraseStartScreen:				# erase the start screen
 	sw	$0, 3284($t0)		# erase the unit on row 25, column 21, color 3
 	jr	$ra			# exit()
 
+drawLevelUpScreen:
+	Main:
+	lw	$t0, displayAddress	# $t0 stores the base address for display
+	li	$t1, 0x9e9e9e		# $t1 stores the light grey color code
+	li	$t2, 0x464646		# $t2 stores the dark grey color code
+	li	$t3, 0xffd266		# $t3 stores the yellow color code
+	sw	$t1, 132($t0)		# paint the unit on row 1, column 1, color 1
+	sw	$t1, 156($t0)		# paint the unit on row 1, column 7, color 1
+	sw	$t1, 160($t0)		# paint the unit on row 1, column 8, color 1
+	sw	$t1, 164($t0)		# paint the unit on row 1, column 9, color 1
+	sw	$t1, 168($t0)		# paint the unit on row 1, column 10, color 1
+	sw	$t1, 172($t0)		# paint the unit on row 1, column 11, color 1
+	sw	$t1, 180($t0)		# paint the unit on row 1, column 13, color 1
+	sw	$t1, 196($t0)		# paint the unit on row 1, column 17, color 1
+	sw	$t1, 204($t0)		# paint the unit on row 1, column 19, color 1
+	sw	$t1, 208($t0)		# paint the unit on row 1, column 20, color 1
+	sw	$t1, 212($t0)		# paint the unit on row 1, column 21, color 1
+	sw	$t1, 216($t0)		# paint the unit on row 1, column 22, color 1
+	sw	$t1, 220($t0)		# paint the unit on row 1, column 23, color 1
+	sw	$t1, 228($t0)		# paint the unit on row 1, column 25, color 1
+	sw	$t1, 260($t0)		# paint the unit on row 2, column 1, color 1
+	sw	$t1, 284($t0)		# paint the unit on row 2, column 7, color 1
+	sw	$t1, 308($t0)		# paint the unit on row 2, column 13, color 1
+	sw	$t1, 324($t0)		# paint the unit on row 2, column 17, color 1
+	sw	$t1, 332($t0)		# paint the unit on row 2, column 19, color 1
+	sw	$t1, 356($t0)		# paint the unit on row 2, column 25, color 1
+	sw	$t1, 388($t0)		# paint the unit on row 3, column 1, color 1
+	sw	$t1, 412($t0)		# paint the unit on row 3, column 7, color 1
+	sw	$t1, 416($t0)		# paint the unit on row 3, column 8, color 1
+	sw	$t1, 420($t0)		# paint the unit on row 3, column 9, color 1
+	sw	$t1, 424($t0)		# paint the unit on row 3, column 10, color 1
+	sw	$t1, 428($t0)		# paint the unit on row 3, column 11, color 1
+	sw	$t1, 436($t0)		# paint the unit on row 3, column 13, color 1
+	sw	$t1, 452($t0)		# paint the unit on row 3, column 17, color 1
+	sw	$t1, 460($t0)		# paint the unit on row 3, column 19, color 1
+	sw	$t1, 464($t0)		# paint the unit on row 3, column 20, color 1
+	sw	$t1, 468($t0)		# paint the unit on row 3, column 21, color 1
+	sw	$t1, 472($t0)		# paint the unit on row 3, column 22, color 1
+	sw	$t1, 476($t0)		# paint the unit on row 3, column 23, color 1
+	sw	$t1, 484($t0)		# paint the unit on row 3, column 25, color 1
+	sw	$t1, 516($t0)		# paint the unit on row 4, column 1, color 1
+	sw	$t1, 540($t0)		# paint the unit on row 4, column 7, color 1
+	sw	$t1, 564($t0)		# paint the unit on row 4, column 13, color 1
+	sw	$t1, 580($t0)		# paint the unit on row 4, column 17, color 1
+	sw	$t1, 588($t0)		# paint the unit on row 4, column 19, color 1
+	sw	$t1, 612($t0)		# paint the unit on row 4, column 25, color 1
+	sw	$t1, 644($t0)		# paint the unit on row 5, column 1, color 1
+	sw	$t1, 668($t0)		# paint the unit on row 5, column 7, color 1
+	sw	$t1, 696($t0)		# paint the unit on row 5, column 14, color 1
+	sw	$t1, 704($t0)		# paint the unit on row 5, column 16, color 1
+	sw	$t1, 716($t0)		# paint the unit on row 5, column 19, color 1
+	sw	$t1, 740($t0)		# paint the unit on row 5, column 25, color 1
+	sw	$t1, 772($t0)		# paint the unit on row 6, column 1, color 1
+	sw	$t1, 776($t0)		# paint the unit on row 6, column 2, color 1
+	sw	$t1, 780($t0)		# paint the unit on row 6, column 3, color 1
+	sw	$t1, 784($t0)		# paint the unit on row 6, column 4, color 1
+	sw	$t1, 788($t0)		# paint the unit on row 6, column 5, color 1
+	sw	$t1, 796($t0)		# paint the unit on row 6, column 7, color 1
+	sw	$t1, 800($t0)		# paint the unit on row 6, column 8, color 1
+	sw	$t1, 804($t0)		# paint the unit on row 6, column 9, color 1
+	sw	$t1, 808($t0)		# paint the unit on row 6, column 10, color 1
+	sw	$t1, 812($t0)		# paint the unit on row 6, column 11, color 1
+	sw	$t1, 828($t0)		# paint the unit on row 6, column 15, color 1
+	sw	$t1, 844($t0)		# paint the unit on row 6, column 19, color 1
+	sw	$t1, 848($t0)		# paint the unit on row 6, column 20, color 1
+	sw	$t1, 852($t0)		# paint the unit on row 6, column 21, color 1
+	sw	$t1, 856($t0)		# paint the unit on row 6, column 22, color 1
+	sw	$t1, 860($t0)		# paint the unit on row 6, column 23, color 1
+	sw	$t1, 868($t0)		# paint the unit on row 6, column 25, color 1
+	sw	$t1, 872($t0)		# paint the unit on row 6, column 26, color 1
+	sw	$t1, 876($t0)		# paint the unit on row 6, column 27, color 1
+	sw	$t1, 880($t0)		# paint the unit on row 6, column 28, color 1
+	sw	$t1, 884($t0)		# paint the unit on row 6, column 29, color 1
+	sw	$t3, 1320($t0)		# paint the unit on row 10, column 10, color 3
+	sw	$t3, 1336($t0)		# paint the unit on row 10, column 14, color 3
+	sw	$t3, 1448($t0)		# paint the unit on row 11, column 10, color 3
+	sw	$t3, 1464($t0)		# paint the unit on row 11, column 14, color 3
+	sw	$t3, 1576($t0)		# paint the unit on row 12, column 10, color 3
+	sw	$t3, 1592($t0)		# paint the unit on row 12, column 14, color 3
+	sw	$t3, 1604($t0)		# paint the unit on row 12, column 17, color 3
+	sw	$t3, 1608($t0)		# paint the unit on row 12, column 18, color 3
+	sw	$t3, 1612($t0)		# paint the unit on row 12, column 19, color 3
+	sw	$t3, 1616($t0)		# paint the unit on row 12, column 20, color 3
+	sw	$t3, 1620($t0)		# paint the unit on row 12, column 21, color 3
+	sw	$t3, 1704($t0)		# paint the unit on row 13, column 10, color 3
+	sw	$t3, 1720($t0)		# paint the unit on row 13, column 14, color 3
+	sw	$t3, 1732($t0)		# paint the unit on row 13, column 17, color 3
+	sw	$t3, 1748($t0)		# paint the unit on row 13, column 21, color 3
+	sw	$t3, 1832($t0)		# paint the unit on row 14, column 10, color 3
+	sw	$t3, 1848($t0)		# paint the unit on row 14, column 14, color 3
+	sw	$t3, 1860($t0)		# paint the unit on row 14, column 17, color 3
+	sw	$t3, 1876($t0)		# paint the unit on row 14, column 21, color 3
+	sw	$t3, 1960($t0)		# paint the unit on row 15, column 10, color 3
+	sw	$t3, 1964($t0)		# paint the unit on row 15, column 11, color 3
+	sw	$t3, 1968($t0)		# paint the unit on row 15, column 12, color 3
+	sw	$t3, 1972($t0)		# paint the unit on row 15, column 13, color 3
+	sw	$t3, 1976($t0)		# paint the unit on row 15, column 14, color 3
+	sw	$t3, 1988($t0)		# paint the unit on row 15, column 17, color 3
+	sw	$t3, 1992($t0)		# paint the unit on row 15, column 18, color 3
+	sw	$t3, 1996($t0)		# paint the unit on row 15, column 19, color 3
+	sw	$t3, 2000($t0)		# paint the unit on row 15, column 20, color 3
+	sw	$t3, 2004($t0)		# paint the unit on row 15, column 21, color 3
+	sw	$t3, 2116($t0)		# paint the unit on row 16, column 17, color 3
+	sw	$t3, 2244($t0)		# paint the unit on row 17, column 17, color 3
+	sw	$t3, 2372($t0)		# paint the unit on row 18, column 17, color 3
+	sw	$t3, 2492($t0)		# paint the unit on row 19, column 15, color 3
+	sw	$t3, 2500($t0)		# paint the unit on row 19, column 17, color 3
+	sw	$t3, 2616($t0)		# paint the unit on row 20, column 14, color 3
+	sw	$t3, 2620($t0)		# paint the unit on row 20, column 15, color 3
+	sw	$t3, 2624($t0)		# paint the unit on row 20, column 16, color 3
+	sw	$t3, 2740($t0)		# paint the unit on row 21, column 13, color 3
+	sw	$t3, 2744($t0)		# paint the unit on row 21, column 14, color 3
+	sw	$t3, 2748($t0)		# paint the unit on row 21, column 15, color 3
+	sw	$t3, 2752($t0)		# paint the unit on row 21, column 16, color 3
+	sw	$t3, 2756($t0)		# paint the unit on row 21, column 17, color 3
+	sw	$t3, 2864($t0)		# paint the unit on row 22, column 12, color 3
+	sw	$t3, 2868($t0)		# paint the unit on row 22, column 13, color 3
+	sw	$t3, 2872($t0)		# paint the unit on row 22, column 14, color 3
+	sw	$t3, 2876($t0)		# paint the unit on row 22, column 15, color 3
+	sw	$t3, 2880($t0)		# paint the unit on row 22, column 16, color 3
+	sw	$t3, 2884($t0)		# paint the unit on row 22, column 17, color 3
+	sw	$t3, 2888($t0)		# paint the unit on row 22, column 18, color 3
+	sw	$t3, 2988($t0)		# paint the unit on row 23, column 11, color 3
+	sw	$t3, 2992($t0)		# paint the unit on row 23, column 12, color 3
+	sw	$t3, 2996($t0)		# paint the unit on row 23, column 13, color 3
+	sw	$t3, 3000($t0)		# paint the unit on row 23, column 14, color 3
+	sw	$t3, 3004($t0)		# paint the unit on row 23, column 15, color 3
+	sw	$t3, 3008($t0)		# paint the unit on row 23, column 16, color 3
+	sw	$t3, 3012($t0)		# paint the unit on row 23, column 17, color 3
+	sw	$t3, 3016($t0)		# paint the unit on row 23, column 18, color 3
+	sw	$t3, 3020($t0)		# paint the unit on row 23, column 19, color 3
+	sw	$t3, 3112($t0)		# paint the unit on row 24, column 10, color 3
+	sw	$t3, 3116($t0)		# paint the unit on row 24, column 11, color 3
+	sw	$t3, 3120($t0)		# paint the unit on row 24, column 12, color 3
+	sw	$t3, 3124($t0)		# paint the unit on row 24, column 13, color 3
+	sw	$t3, 3128($t0)		# paint the unit on row 24, column 14, color 3
+	sw	$t3, 3132($t0)		# paint the unit on row 24, column 15, color 3
+	sw	$t3, 3136($t0)		# paint the unit on row 24, column 16, color 3
+	sw	$t3, 3140($t0)		# paint the unit on row 24, column 17, color 3
+	sw	$t3, 3144($t0)		# paint the unit on row 24, column 18, color 3
+	sw	$t3, 3148($t0)		# paint the unit on row 24, column 19, color 3
+	sw	$t3, 3152($t0)		# paint the unit on row 24, column 20, color 3
+	sw	$t3, 3256($t0)		# paint the unit on row 25, column 14, color 3
+	sw	$t3, 3260($t0)		# paint the unit on row 25, column 15, color 3
+	sw	$t3, 3264($t0)		# paint the unit on row 25, column 16, color 3
+	sw	$t3, 3384($t0)		# paint the unit on row 26, column 14, color 3
+	sw	$t3, 3388($t0)		# paint the unit on row 26, column 15, color 3
+	sw	$t3, 3392($t0)		# paint the unit on row 26, column 16, color 3
+	sw	$t3, 3512($t0)		# paint the unit on row 27, column 14, color 3
+	sw	$t3, 3516($t0)		# paint the unit on row 27, column 15, color 3
+	sw	$t3, 3520($t0)		# paint the unit on row 27, column 16, color 3
+	sw	$t3, 3640($t0)		# paint the unit on row 28, column 14, color 3
+	sw	$t3, 3644($t0)		# paint the unit on row 28, column 15, color 3
+	sw	$t3, 3648($t0)		# paint the unit on row 28, column 16, color 3
+	sw	$t3, 3768($t0)		# paint the unit on row 29, column 14, color 3
+	sw	$t3, 3772($t0)		# paint the unit on row 29, column 15, color 3
+	sw	$t3, 3776($t0)		# paint the unit on row 29, column 16, color 3
+	sw	$t3, 3896($t0)		# paint the unit on row 30, column 14, color 3
+	sw	$t3, 3900($t0)		# paint the unit on row 30, column 15, color 3
+	sw	$t3, 3904($t0)		# paint the unit on row 30, column 16, color 3
+	sw	$t3, 4024($t0)		# paint the unit on row 31, column 14, color 3
+	sw	$t3, 4028($t0)		# paint the unit on row 31, column 15, color 3
+	sw	$t3, 4032($t0)		# paint the unit on row 31, column 16, color 3
+	jr	$ra			# exit()
+
+eraseLevelUpScreen:
+	lw	$t0, displayAddress	# $t0 stores the base address for display
+	sw	$0, 132($t0)		# erase the unit on row 1, column 1, color 1
+	sw	$0, 156($t0)		# erase the unit on row 1, column 7, color 1
+	sw	$0, 160($t0)		# erase the unit on row 1, column 8, color 1
+	sw	$0, 164($t0)		# erase the unit on row 1, column 9, color 1
+	sw	$0, 168($t0)		# erase the unit on row 1, column 10, color 1
+	sw	$0, 172($t0)		# erase the unit on row 1, column 11, color 1
+	sw	$0, 180($t0)		# erase the unit on row 1, column 13, color 1
+	sw	$0, 196($t0)		# erase the unit on row 1, column 17, color 1
+	sw	$0, 204($t0)		# erase the unit on row 1, column 19, color 1
+	sw	$0, 208($t0)		# erase the unit on row 1, column 20, color 1
+	sw	$0, 212($t0)		# erase the unit on row 1, column 21, color 1
+	sw	$0, 216($t0)		# erase the unit on row 1, column 22, color 1
+	sw	$0, 220($t0)		# erase the unit on row 1, column 23, color 1
+	sw	$0, 228($t0)		# erase the unit on row 1, column 25, color 1
+	sw	$0, 260($t0)		# erase the unit on row 2, column 1, color 1
+	sw	$0, 284($t0)		# erase the unit on row 2, column 7, color 1
+	sw	$0, 308($t0)		# erase the unit on row 2, column 13, color 1
+	sw	$0, 324($t0)		# erase the unit on row 2, column 17, color 1
+	sw	$0, 332($t0)		# erase the unit on row 2, column 19, color 1
+	sw	$0, 356($t0)		# erase the unit on row 2, column 25, color 1
+	sw	$0, 388($t0)		# erase the unit on row 3, column 1, color 1
+	sw	$0, 412($t0)		# erase the unit on row 3, column 7, color 1
+	sw	$0, 416($t0)		# erase the unit on row 3, column 8, color 1
+	sw	$0, 420($t0)		# erase the unit on row 3, column 9, color 1
+	sw	$0, 424($t0)		# erase the unit on row 3, column 10, color 1
+	sw	$0, 428($t0)		# erase the unit on row 3, column 11, color 1
+	sw	$0, 436($t0)		# erase the unit on row 3, column 13, color 1
+	sw	$0, 452($t0)		# erase the unit on row 3, column 17, color 1
+	sw	$0, 460($t0)		# erase the unit on row 3, column 19, color 1
+	sw	$0, 464($t0)		# erase the unit on row 3, column 20, color 1
+	sw	$0, 468($t0)		# erase the unit on row 3, column 21, color 1
+	sw	$0, 472($t0)		# erase the unit on row 3, column 22, color 1
+	sw	$0, 476($t0)		# erase the unit on row 3, column 23, color 1
+	sw	$0, 484($t0)		# erase the unit on row 3, column 25, color 1
+	sw	$0, 516($t0)		# erase the unit on row 4, column 1, color 1
+	sw	$0, 540($t0)		# erase the unit on row 4, column 7, color 1
+	sw	$0, 564($t0)		# erase the unit on row 4, column 13, color 1
+	sw	$0, 580($t0)		# erase the unit on row 4, column 17, color 1
+	sw	$0, 588($t0)		# erase the unit on row 4, column 19, color 1
+	sw	$0, 612($t0)		# erase the unit on row 4, column 25, color 1
+	sw	$0, 644($t0)		# erase the unit on row 5, column 1, color 1
+	sw	$0, 668($t0)		# erase the unit on row 5, column 7, color 1
+	sw	$0, 696($t0)		# erase the unit on row 5, column 14, color 1
+	sw	$0, 704($t0)		# erase the unit on row 5, column 16, color 1
+	sw	$0, 716($t0)		# erase the unit on row 5, column 19, color 1
+	sw	$0, 740($t0)		# erase the unit on row 5, column 25, color 1
+	sw	$0, 772($t0)		# erase the unit on row 6, column 1, color 1
+	sw	$0, 776($t0)		# erase the unit on row 6, column 2, color 1
+	sw	$0, 780($t0)		# erase the unit on row 6, column 3, color 1
+	sw	$0, 784($t0)		# erase the unit on row 6, column 4, color 1
+	sw	$0, 788($t0)		# erase the unit on row 6, column 5, color 1
+	sw	$0, 796($t0)		# erase the unit on row 6, column 7, color 1
+	sw	$0, 800($t0)		# erase the unit on row 6, column 8, color 1
+	sw	$0, 804($t0)		# erase the unit on row 6, column 9, color 1
+	sw	$0, 808($t0)		# erase the unit on row 6, column 10, color 1
+	sw	$0, 812($t0)		# erase the unit on row 6, column 11, color 1
+	sw	$0, 828($t0)		# erase the unit on row 6, column 15, color 1
+	sw	$0, 844($t0)		# erase the unit on row 6, column 19, color 1
+	sw	$0, 848($t0)		# erase the unit on row 6, column 20, color 1
+	sw	$0, 852($t0)		# erase the unit on row 6, column 21, color 1
+	sw	$0, 856($t0)		# erase the unit on row 6, column 22, color 1
+	sw	$0, 860($t0)		# erase the unit on row 6, column 23, color 1
+	sw	$0, 868($t0)		# erase the unit on row 6, column 25, color 1
+	sw	$0, 872($t0)		# erase the unit on row 6, column 26, color 1
+	sw	$0, 876($t0)		# erase the unit on row 6, column 27, color 1
+	sw	$0, 880($t0)		# erase the unit on row 6, column 28, color 1
+	sw	$0, 884($t0)		# erase the unit on row 6, column 29, color 1
+	sw	$0, 1320($t0)		# erase the unit on row 10, column 10, color 3
+	sw	$0, 1336($t0)		# erase the unit on row 10, column 14, color 3
+	sw	$0, 1448($t0)		# erase the unit on row 11, column 10, color 3
+	sw	$0, 1464($t0)		# erase the unit on row 11, column 14, color 3
+	sw	$0, 1576($t0)		# erase the unit on row 12, column 10, color 3
+	sw	$0, 1592($t0)		# erase the unit on row 12, column 14, color 3
+	sw	$0, 1604($t0)		# erase the unit on row 12, column 17, color 3
+	sw	$0, 1608($t0)		# erase the unit on row 12, column 18, color 3
+	sw	$0, 1612($t0)		# erase the unit on row 12, column 19, color 3
+	sw	$0, 1616($t0)		# erase the unit on row 12, column 20, color 3
+	sw	$0, 1620($t0)		# erase the unit on row 12, column 21, color 3
+	sw	$0, 1704($t0)		# erase the unit on row 13, column 10, color 3
+	sw	$0, 1720($t0)		# erase the unit on row 13, column 14, color 3
+	sw	$0, 1732($t0)		# erase the unit on row 13, column 17, color 3
+	sw	$0, 1748($t0)		# erase the unit on row 13, column 21, color 3
+	sw	$0, 1832($t0)		# erase the unit on row 14, column 10, color 3
+	sw	$0, 1848($t0)		# erase the unit on row 14, column 14, color 3
+	sw	$0, 1860($t0)		# erase the unit on row 14, column 17, color 3
+	sw	$0, 1876($t0)		# erase the unit on row 14, column 21, color 3
+	sw	$0, 1960($t0)		# erase the unit on row 15, column 10, color 3
+	sw	$0, 1964($t0)		# erase the unit on row 15, column 11, color 3
+	sw	$0, 1968($t0)		# erase the unit on row 15, column 12, color 3
+	sw	$0, 1972($t0)		# erase the unit on row 15, column 13, color 3
+	sw	$0, 1976($t0)		# erase the unit on row 15, column 14, color 3
+	sw	$0, 1988($t0)		# erase the unit on row 15, column 17, color 3
+	sw	$0, 1992($t0)		# erase the unit on row 15, column 18, color 3
+	sw	$0, 1996($t0)		# erase the unit on row 15, column 19, color 3
+	sw	$0, 2000($t0)		# erase the unit on row 15, column 20, color 3
+	sw	$0, 2004($t0)		# erase the unit on row 15, column 21, color 3
+	sw	$0, 2116($t0)		# erase the unit on row 16, column 17, color 3
+	sw	$0, 2244($t0)		# erase the unit on row 17, column 17, color 3
+	sw	$0, 2372($t0)		# erase the unit on row 18, column 17, color 3
+	sw	$0, 2492($t0)		# erase the unit on row 19, column 15, color 3
+	sw	$0, 2500($t0)		# erase the unit on row 19, column 17, color 3
+	sw	$0, 2616($t0)		# erase the unit on row 20, column 14, color 3
+	sw	$0, 2620($t0)		# erase the unit on row 20, column 15, color 3
+	sw	$0, 2624($t0)		# erase the unit on row 20, column 16, color 3
+	sw	$0, 2740($t0)		# erase the unit on row 21, column 13, color 3
+	sw	$0, 2744($t0)		# erase the unit on row 21, column 14, color 3
+	sw	$0, 2748($t0)		# erase the unit on row 21, column 15, color 3
+	sw	$0, 2752($t0)		# erase the unit on row 21, column 16, color 3
+	sw	$0, 2756($t0)		# erase the unit on row 21, column 17, color 3
+	sw	$0, 2864($t0)		# erase the unit on row 22, column 12, color 3
+	sw	$0, 2868($t0)		# erase the unit on row 22, column 13, color 3
+	sw	$0, 2872($t0)		# erase the unit on row 22, column 14, color 3
+	sw	$0, 2876($t0)		# erase the unit on row 22, column 15, color 3
+	sw	$0, 2880($t0)		# erase the unit on row 22, column 16, color 3
+	sw	$0, 2884($t0)		# erase the unit on row 22, column 17, color 3
+	sw	$0, 2888($t0)		# erase the unit on row 22, column 18, color 3
+	sw	$0, 2988($t0)		# erase the unit on row 23, column 11, color 3
+	sw	$0, 2992($t0)		# erase the unit on row 23, column 12, color 3
+	sw	$0, 2996($t0)		# erase the unit on row 23, column 13, color 3
+	sw	$0, 3000($t0)		# erase the unit on row 23, column 14, color 3
+	sw	$0, 3004($t0)		# erase the unit on row 23, column 15, color 3
+	sw	$0, 3008($t0)		# erase the unit on row 23, column 16, color 3
+	sw	$0, 3012($t0)		# erase the unit on row 23, column 17, color 3
+	sw	$0, 3016($t0)		# erase the unit on row 23, column 18, color 3
+	sw	$0, 3020($t0)		# erase the unit on row 23, column 19, color 3
+	sw	$0, 3112($t0)		# erase the unit on row 24, column 10, color 3
+	sw	$0, 3116($t0)		# erase the unit on row 24, column 11, color 3
+	sw	$0, 3120($t0)		# erase the unit on row 24, column 12, color 3
+	sw	$0, 3124($t0)		# erase the unit on row 24, column 13, color 3
+	sw	$0, 3128($t0)		# erase the unit on row 24, column 14, color 3
+	sw	$0, 3132($t0)		# erase the unit on row 24, column 15, color 3
+	sw	$0, 3136($t0)		# erase the unit on row 24, column 16, color 3
+	sw	$0, 3140($t0)		# erase the unit on row 24, column 17, color 3
+	sw	$0, 3144($t0)		# erase the unit on row 24, column 18, color 3
+	sw	$0, 3148($t0)		# erase the unit on row 24, column 19, color 3
+	sw	$0, 3152($t0)		# erase the unit on row 24, column 20, color 3
+	sw	$0, 3256($t0)		# erase the unit on row 25, column 14, color 3
+	sw	$0, 3260($t0)		# erase the unit on row 25, column 15, color 3
+	sw	$0, 3264($t0)		# erase the unit on row 25, column 16, color 3
+	sw	$0, 3384($t0)		# erase the unit on row 26, column 14, color 3
+	sw	$0, 3388($t0)		# erase the unit on row 26, column 15, color 3
+	sw	$0, 3392($t0)		# erase the unit on row 26, column 16, color 3
+	sw	$0, 3512($t0)		# erase the unit on row 27, column 14, color 3
+	sw	$0, 3516($t0)		# erase the unit on row 27, column 15, color 3
+	sw	$0, 3520($t0)		# erase the unit on row 27, column 16, color 3
+	sw	$0, 3640($t0)		# erase the unit on row 28, column 14, color 3
+	sw	$0, 3644($t0)		# erase the unit on row 28, column 15, color 3
+	sw	$0, 3648($t0)		# erase the unit on row 28, column 16, color 3
+	sw	$0, 3768($t0)		# erase the unit on row 29, column 14, color 3
+	sw	$0, 3772($t0)		# erase the unit on row 29, column 15, color 3
+	sw	$0, 3776($t0)		# erase the unit on row 29, column 16, color 3
+	sw	$0, 3896($t0)		# erase the unit on row 30, column 14, color 3
+	sw	$0, 3900($t0)		# erase the unit on row 30, column 15, color 3
+	sw	$0, 3904($t0)		# erase the unit on row 30, column 16, color 3
+	sw	$0, 4024($t0)		# erase the unit on row 31, column 14, color 3
+	sw	$0, 4028($t0)		# erase the unit on row 31, column 15, color 3
+	sw	$0, 4032($t0)		# erase the unit on row 31, column 16, color 3
+	jr	$ra			# exit()
+
 drawSpaceship:
 	lw	$t0, displayAddress		# draw the spaceship according to its position in row and column
 	lw	$t1, shipRow			# load row of space ship
@@ -697,6 +1118,7 @@ drawSpaceship:
 	sw	$t1, 256($t0)			# paint the unit on row 2, column 0, color 1
 	sw	$t1, 260($t0)			# paint the unit on row 2, column 1, color 1
 	sw	$t1, 264($t0)			# paint the unit on row 2, column 2, color 1
+	sw	$t1, 268($t0)			# paint the unit on row 2, column 3, color 1
 	sw	$t1, 388($t0)			# paint the unit on row 3, column 1, color 1
 	
 	jr	$ra				# exit()
@@ -719,6 +1141,7 @@ eraseSpaceship:					# erase the spaceship
 	sw	$0, 256($t0)			# erase the unit on row 2, column 0, color 1
 	sw	$0, 260($t0)			# erase the unit on row 2, column 1, color 1
 	sw	$0, 264($t0)			# erase the unit on row 2, column 2, color 1
+	sw	$0, 268($t0)			# erase the unit on row 2, column 3, color 1
 	sw	$0, 388($t0)			# erase the unit on row 3, column 1, color 1
 	
 	jr	$ra				# exit()
@@ -726,7 +1149,9 @@ eraseSpaceship:					# erase the spaceship
 drawObstacle:	
 	lw	$t1, displayAddress
 	li	$t4, 0				# i = 0
-	mul	$t5, $s2, 4			# get total number of obstacles according to difficulty
+	addi	$t5, $s2, 0			# get total number of obstacles according to difficulty
+	mul	$t5, $t5, 2
+	addi	$t5, $t5, 2
 	condDrawObstacleLoop:
 	bge	$t4, $t5, endDrawObstacleLoop
 	bodyDrawObstacleLoop:
@@ -735,14 +1160,19 @@ drawObstacle:
 	lw	$t8, obstacleRow($t6)
 	lw	$t9, obstacleColumn($t6)
 	
+	bge	$t9, 32, addIDrawObstacleLoop
+	
 	sll	$t8, $t8, 7
 	sll	$t9, $t9, 2
 	add	$t0, $t8, $t9
 	add	$t0, $t0, $t1
 	
+	bge	$t7, 1, type1
+	
+	type0:
 	li	$t3, 0xffd266			# $t3 stores the yellow color code
 	li	$t2, 0x9e9e9e			# $t1 stores the light grey color code
-	li	$t8, 0x464646			# $t2 stores the dark grey color code
+	li	$t8, 0x464646			# $t8 stores the dark grey color code
 	li	$t9, 0
 	C1:					# check for collision
 	lw	$t7, 0($t0)
@@ -782,7 +1212,7 @@ drawObstacle:
 	
 	afterCheckDrawObstacleLoop:
 	beqz	$t9, addIDrawObstacleLoop
-	addi	$s3, $s3, 1			# one collision, add one to the damage $s3
+	add	$s3, $s3, $t9			# one collision, add hits with one drawing to the damage $s3
 						# erase the obstacle drew and generate new again
 	sw	$0, 0($t0)			# erase the unit on row 0, column 0, color 3
 	sw	$0, 128($t0)			# erase the unit on row 1, column 0, color 3
@@ -791,22 +1221,126 @@ drawObstacle:
 	
 	li 	$v0, 42         	# Service 42, random int range
 	li 	$a0, 0          	# Select random generator 0
-	li 	$a1, 28	   		# Select upper bound of random number
+	li 	$a1, 26	   		# Select upper bound of random number
 	syscall            		# Generate random int (returns in $a0)
 	
 	addi	$t7, $a0, 0		# get row position in $t7
-		
-	#li 	$v0, 42         	# Service 42, random int range
-	#li 	$a0, 0          	# Select random generator 0
-	#addi	$a1, $0, 0		# Biggest possible type will be difficulty - 1
-	#syscall            		# Generate random int (returns in $a0)
 	
-	addi	$t5, $0, 0		# get type in $t5
+	li 	$v0, 42         	# Service 42, random int range
+	li 	$a0, 32          	# Select random generator 32
+	li 	$a1, 47	   		# Select upper bound of random number
+	syscall            		# Generate random int (returns in $a0)
+	
+	addi	$t8, $a0, 0		# get column position in $t7
+		
+	li 	$v0, 42         	# Service 42, random int range
+	li 	$a0, 0          	# Select random generator 0
+	addi	$a1, $s2, 0		# Biggest possible type will be difficulty - 1
+	syscall            		# Generate random int (returns in $a0)
+	
+	addi	$t5, $a0, 0		# get type in $t5
 		
 	sw	$t5, obstacleType($t6)
-	li	$t8, 31
 	sw	$t8, obstacleColumn($t6)
 	sw	$t7, obstacleRow($t6)
+	j	addIDrawObstacleLoop
+	
+	################################
+	type1:
+	li	$t3, 0xff4500			# $t3 stores the yellow color code
+	li	$t2, 0x9e9e9e			# $t1 stores the light grey color code
+	li	$t8, 0x464646			# $t8 stores the dark grey color code
+	li	$t9, 0
+	C21:					# check for collision
+	lw	$t7, 0($t0)
+	beq	$t7, $t2, H21
+	beq	$t7, $t8, H21
+	sw	$t3, 0($t0)			# paint the unit on row 0, column 0, color 3
+	j	C22
+	H21:
+	addi	$t9, $t9, 1			# record one hit
+	
+	C22:					# check for collision
+	lw	$t7, 128($t0)
+	beq	$t7, $t2, H22
+	beq	$t7, $t8, H22
+	sw	$t3, 128($t0)			# paint the unit on row 1, column 0, color 3
+	j	C23
+	H22:
+	addi	$t9, $t9, 1			# record one hit
+	
+	C23:					# check for collision
+	lw	$t7, 256($t0)
+	beq	$t7, $t2, H23
+	beq	$t7, $t8, H23
+	sw	$t3, 256($t0)			# paint the unit on row 2, column 0, color 3
+	j	C24
+	H23:
+	addi	$t9, $t9, 1			# record one hit
+	
+	C24:					# check for collision
+	lw	$t7, 384($t0)
+	beq	$t7, $t2, H24
+	beq	$t7, $t8, H24
+	sw	$t3, 384($t0)			# paint the unit on row 3, column 0, color 3
+	j	C25
+	H24:
+	addi	$t9, $t9, 1			# record one hit
+	
+	C25:					# check for collision
+	lw	$t7, 512($t0)
+	beq	$t7, $t2, H25
+	beq	$t7, $t8, H25
+	sw	$t3, 512($t0)			# paint the unit on row 4, column 0, color 3
+	j	C26
+	H25:
+	addi	$t9, $t9, 1			# record one hit
+	
+	C26:					# check for collision
+	lw	$t7, 640($t0)
+	beq	$t7, $t2, H26
+	beq	$t7, $t8, H26
+	sw	$t3, 640($t0)			# paint the unit on row 5, column 0, color 3
+	j	afterCheckDrawObstacleLoop2
+	H26:
+	addi	$t9, $t9, 1			# record one hit
+	
+	afterCheckDrawObstacleLoop2:
+	beqz	$t9, addIDrawObstacleLoop
+	add	$s3, $s3, $t9			# one collision, add hits with one drawing to the damage $s3
+						# erase the obstacle drew and generate new again
+	sw	$0, 0($t0)			# erase the unit on row 0, column 0, color 3
+	sw	$0, 128($t0)			# erase the unit on row 1, column 0, color 3
+	sw	$0, 256($t0)			# erase the unit on row 2, column 0, color 3
+	sw	$0, 384($t0)			# erase the unit on row 3, column 0, color 3
+	sw	$0, 512($t0)			# erase the unit on row 4, column 0, color 3
+	sw	$0, 640($t0)			# erase the unit on row 5, column 0, color 3
+	
+	li 	$v0, 42         	# Service 42, random int range
+	li 	$a0, 0          	# Select random generator 0
+	li 	$a1, 26	   		# Select upper bound of random number
+	syscall            		# Generate random int (returns in $a0)
+	
+	addi	$t7, $a0, 0		# get row position in $t7
+	
+	li 	$v0, 42         	# Service 42, random int range
+	li 	$a0, 32          	# Select random generator 32
+	li 	$a1, 47	   		# Select upper bound of random number
+	syscall            		# Generate random int (returns in $a0)
+	
+	addi	$t8, $a0, 0		# get column position in $t7
+		
+	li 	$v0, 42         	# Service 42, random int range
+	li 	$a0, 0          	# Select random generator 0
+	addi	$a1, $s2, 0		# Biggest possible type will be difficulty - 1
+	syscall            		# Generate random int (returns in $a0)
+	
+	addi	$t5, $a0, 0		# get type in $t5
+		
+	sw	$t5, obstacleType($t6)
+	sw	$t8, obstacleColumn($t6)
+	sw	$t7, obstacleRow($t6)
+	#################################
 	
 	addIDrawObstacleLoop:
 	addi	$t4, $t4, 1			# i += 1
@@ -819,9 +1353,10 @@ eraseObstacle:					# erase obstacles
 	lw	$t1, displayAddress		# draw the obstacle according to given type and position
 	li	$t4, 0				# i = 0
 	move	$t5, $s2			# get total number of obstacles according to difficulty
-	sll	$t5, $t5, 2
+	sll	$t5, $t5, 1
+	addi	$t5, $t5, 2
 	condEraseObstacleLoop:
-	bge	$t4, 4, endDrawObstacleLoop
+	bge	$t4, $t5, endDrawObstacleLoop
 	bodyEraseObstacleLoop:
 	sll	$t6, $t4, 2			# get the position in memory for the obstacle
 	lw	$t7, obstacleType($t6)
@@ -832,11 +1367,24 @@ eraseObstacle:					# erase obstacles
 	add	$t8, $t8, $t9
 	add	$t0, $t1, $t8
 	
+	bge	$t7, 1, eraseType1
+	
+	eraseType0:
 	sw	$0, 0($t0)			# erase the unit on row 0, column 0, color 3
 	sw	$0, 128($t0)			# erase the unit on row 1, column 0, color 3
 	sw	$0, 256($t0)			# erase the unit on row 2, column 0, color 3
 	sw	$0, 384($t0)			# erase the unit on row 3, column 0, color 3
+	j	endErasePixels
 	
+	eraseType1:
+	sw	$0, 0($t0)			# erase the unit on row 0, column 0, color 3
+	sw	$0, 128($t0)			# erase the unit on row 1, column 0, color 3
+	sw	$0, 256($t0)			# erase the unit on row 2, column 0, color 3
+	sw	$0, 384($t0)			# erase the unit on row 3, column 0, color 3
+	sw	$0, 512($t0)			# erase the unit on row 4, column 0, color 3
+	sw	$0, 640($t0)			# erase the unit on row 5, column 0, color 3
+	
+	endErasePixels:
 	addi	$t4, $t4, 1			# i += 1
 	j	condEraseObstacleLoop
 	
@@ -965,6 +1513,10 @@ eraseStatusBar:					# erase health points
 	jr	$ra
 
 drawEndScreen:					# draw the end of game screen
+	sw	$ra, 4($sp)			# store return address to stack
+	addi	$sp, $sp, 4			# move stack up
+
+
 	lw	$t0, displayAddress	# $t0 stores the base address for display
 	li	$t1, 0x9e9e9e		# $t1 stores the light grey color code
 	li	$t2, 0x464646		# $t2 stores the dark grey color code
@@ -1120,16 +1672,9 @@ drawEndScreen:					# draw the end of game screen
 	addi	$v0, $t0, 2448		# set address to display
 	jal	displayNumber		# display the number
 	
+	lw	$ra, ($sp)		# load word back
+	addi	$sp, $sp, -4		# pop the stack
 	jr	$ra			# return;
-
-#################################################
-# game sleep function
-
-gameSleep:
-	li 	$v0, 32				# sleep syscall
-	li 	$a0, 100			# sleep 0.025 second 
-	syscall
-	jr	$ra
 
 #################################################
 # getInput function
@@ -1142,6 +1687,14 @@ getInput:
 	jr	$ra
 
 	processInput:
+	playPressedSound:
+	li	$v0, 31				# when you press a key, note C is played
+	li	$a0, 60
+	li	$a1, 50
+	li	$a2, 0
+	li	$a3, 100
+	syscall
+	
 	lw	$t8, 4($t9)			# get the input character
 	beq	$t8, 'w', wPressed
 	beq	$t8, 'a', aPressed
@@ -1194,7 +1747,9 @@ getInput:
 # reducing the column position by difficult each time
 # if is at the edge(column == 0), generate new at right edge
 updateObstacle:
-	sll	$t2, $s2, 2
+	addi	$t2, $s2, 0
+	mul	$t2, $t2, 2
+	addi	$t2, $t2, 2
 	
 	initUpdateLoop:
 	li	$t0, 0
@@ -1206,13 +1761,16 @@ updateObstacle:
 		
 		blt	$t4, 0, generateNewObstacle
 		
-		sub	$t4, $t4, $s2		# new column = prev column - difficulty 
+		#sub	$t4, $t4, $s2		# new column = prev column - difficulty
+		addi	$t4, $t4, -1
 		sw	$t4, obstacleColumn($t3)
 		addi	$t0, $t0, 1
 		j	condUpdateLoop
 		
 		generateNewObstacle:
-		mul	$t7, $s2, 10		# Add score to player, linear to difficulty
+		addi	$t7, $s2, -1
+		mul	$t7, $t7, 4		# Add score to player
+		lw	$t7, levelScore($t7)
 		add	$s5, $s5, $t7
 		
 		li 	$v0, 42         	# Service 42, random int range
@@ -1222,12 +1780,12 @@ updateObstacle:
 	
 		addi	$t4, $a0, 0		# get row position in $t4
 		
-		#li 	$v0, 42         	# Service 42, random int range
-		#li 	$a0, 0          	# Select random generator 0
-		#addi	$a1, $0, 0		# Biggest possible type will be difficulty - 1
-		#syscall            		# Generate random int (returns in $a0)
+		li 	$v0, 42         	# Service 42, random int range
+		li 	$a0, 0          	# Select random generator 0
+		addi	$a1, $s2, 0		# Biggest possible type will be difficulty - 1
+		syscall            		# Generate random int (returns in $a0)
 	
-		addi	$t5, $0, 0		# get type in $t5
+		addi	$t5, $a0, 0		# get type in $t5
 		
 		sw	$t5, obstacleType($t3)
 		li	$t6, 31
@@ -1256,8 +1814,27 @@ collisionAnimation:
 	add	$t0, $t0, $t1			# calculate the start point of printing for spaceship
 	add	$t0, $t0, $t2
 	
+	li	$v0, 1
+	addi	$a0, $s3, 0
+	syscall
+	
+	li	$v0, 11
+	li	$a0, ' '
+	syscall
+	
+	bge	$s3, 2, fullDamage
+	
+	li 	$v0, 42         		# Service 42, random int range
+	li 	$a0, 0          		# Select random generator 0
+	li	$a1, 10				# 40% of chance getting half damage
+	syscall            			# Generate random int (returns in $a0)
+	
+	addi	$s3, $a0, 0			# store the damage
+	bgt	$s3, 3, fullDamage		# if gazing case happened, show different animation and only reduce health by 1
+
+	halfDamage:
 	li	$t1, 0xffffff			# $t1 stores the light grey color code
-	li	$t2, 0xfffd00			# $t2 stores the dark grey color code
+	li	$t2, 0xffffff			# $t2 stores the dark grey color code
 	sw	$t2, 4($t0)			# paint the unit on row 0, column 1, color 2
 	sw	$t2, 8($t0)			# paint the unit on row 0, column 2, color 2
 	sw	$t1, 128($t0)			# paint the unit on row 1, column 0, color 1
@@ -1269,8 +1846,45 @@ collisionAnimation:
 	sw	$t1, 264($t0)			# paint the unit on row 2, column 2, color 1
 	sw	$t1, 388($t0)			# paint the unit on row 3, column 1, color 1
 	
-	li 	$v0, 32				# sleep syscall
-	li 	$a0, 100			# sleep 0.1 second 
+	li 	$v0, 33				# play sound effect of alight crash
+	li 	$a0, 40
+	li	$a1, 100
+	li	$a2, 120
+	li	$a3, 100			
+	syscall
+						# erase the ship
+	sw	$0, 4($t0)			# paint the unit on row 0, column 1, color 2
+	sw	$0, 8($t0)			# paint the unit on row 0, column 2, color 2
+	sw	$0, 128($t0)			# paint the unit on row 1, column 0, color 1
+	sw	$0, 132($t0)			# paint the unit on row 1, column 1, color 1
+	sw	$0, 136($t0)			# paint the unit on row 1, column 2, color 1
+	sw	$0, 140($t0)			# paint the unit on row 1, column 3, color 1
+	sw	$0, 256($t0)			# paint the unit on row 2, column 0, color 1
+	sw	$0, 260($t0)			# paint the unit on row 2, column 1, color 1
+	sw	$0, 264($t0)			# paint the unit on row 2, column 2, color 1
+	sw	$0, 388($t0)			# paint the unit on row 3, column 1, color 1
+	li	$s3, 1
+	j	endAnimation0
+
+	fullDamage:	
+	li	$t1, 0xff00ff			# $t1 stores the light grey color code
+	li	$t2, 0xff0000			# $t2 stores the dark grey color code
+	sw	$t2, 4($t0)			# paint the unit on row 0, column 1, color 2
+	sw	$t2, 8($t0)			# paint the unit on row 0, column 2, color 2
+	sw	$t1, 128($t0)			# paint the unit on row 1, column 0, color 1
+	sw	$t1, 132($t0)			# paint the unit on row 1, column 1, color 1
+	sw	$t1, 136($t0)			# paint the unit on row 1, column 2, color 1
+	sw	$t1, 140($t0)			# paint the unit on row 1, column 3, color 1
+	sw	$t1, 256($t0)			# paint the unit on row 2, column 0, color 1
+	sw	$t1, 260($t0)			# paint the unit on row 2, column 1, color 1
+	sw	$t1, 264($t0)			# paint the unit on row 2, column 2, color 1
+	sw	$t1, 388($t0)			# paint the unit on row 3, column 1, color 1
+	
+	li 	$v0, 33				# play sound effect of hard crash
+	li 	$a0, 50
+	li	$a1, 100
+	li	$a2, 121
+	li	$a3, 100			
 	syscall
 						# erase the ship
 	sw	$0, 4($t0)			# paint the unit on row 0, column 1, color 2
@@ -1284,10 +1898,19 @@ collisionAnimation:
 	sw	$0, 264($t0)			# paint the unit on row 2, column 2, color 1
 	sw	$0, 388($t0)			# paint the unit on row 3, column 1, color 1
 	
+	li	$s3, 2
+	
+	endAnimation0:
+	li	$v0, 1
+	addi	$a0, $s3, 0
+	syscall
+	
+	li	$v0, 11
+	li	$a0, '\n'
+	syscall
+	endAnimation:
 	sub	$s1, $s1, $s3			# reduce health
 	li	$s3, 0
-	
-	endAnimation:
 	jr	$ra				# return;
 
 #################################################
@@ -1295,7 +1918,7 @@ collisionAnimation:
 # $v0: display address
 # $v1: number to display
 displayNumber:
-	sw	$t0, ($sp)
+	sw	$t0, 4($sp)
 	addi	$sp, $sp, 4
 	
 	addi	$t1, $v0, 0
@@ -1314,8 +1937,8 @@ displayNumber:
 	beq	$t0, 9, disp9
 
 endDisplay:
-	addi	$sp, $sp, -4
 	lw	$t0, ($sp)
+	addi	$sp, $sp, -4
 	jr	$ra
 	
 disp0:
