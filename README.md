@@ -6,7 +6,7 @@ Dedong Xie
 ## Introduction
 This is the project for CSC258 in the University of Toronto Summer term 2021.
 
-Please use the below setup:
+Please follow the below setup:
 
 Running the code `game.asm` using MARS Simulator
 
