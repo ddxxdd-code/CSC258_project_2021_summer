@@ -3,6 +3,40 @@ University of Toronto
 Summer2021 CSC258 project
 Dedong Xie
 
+## Introduction
+This is the project for CSC258 in the University of Toronto Summer term 2021.
+
+Please use the below setup:
+
+Running the code `game.asm` using MARS Simulator
+
+MARS Simulator: https://courses.missouristate.edu/KenVollmar/MARS/
+
+MARS runs on Java, please have Java installed on your machine (or install it from https://www.oracle.com/java/technologies/javase-jdk16-downloads.html)
+
+After opening the code in the simulator, use `Tools -> Bitmap Display` and `Tools -> Keyboard and Display MMIO Simulator`, both connected to MIPS.
+
+Use the below setup for `Bitmap Display`:
+  - Unit width in pixels: 8
+  - Unit height in pixels: 8
+  - Display width in pixels: 256
+  - Display height in pixels: 256
+  - Base Address for Display: 0x10008000 ($gp)
+
+Use `F3` to assemble the code then press the green `run` button on the top middle bar of MARS to start the game.
+
+Input in the Keyboard Simulator's `KEYBOARD` area to control the game.
+
+Use of keyboard in the game:
+  - w: spaceship go up
+  - a: spaceship go right
+  - s: spaceship go down
+  - d: spaceship go left
+  - p: restart the game
+  - e: end the game
+
+__Enjoy Gaming !!!__
+
 ## Project proposal
 CSC258 Project proposal
 
