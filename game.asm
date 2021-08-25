@@ -1,9 +1,9 @@
 #####################################################################
-To avoid possible academical misconduct, 
-you should be notified that in case a similar project is assigned in the future, 
-copy and paste code found on the Internet or GitHub is not permitted.
-This code has been submitted to the course, so that if you use it in your project, you may fail the plagiarism test.
-For any enquiry, please contact me @ dedong.xie@mail.utoronto.ca
+# To avoid possible academical misconduct, 
+# you should be notified that in case a similar project is assigned in the future, 
+# copy and paste code found on the Internet or GitHub is not permitted.
+# This code has been submitted to the course, so that if you use it in your project, you may fail the plagiarism test.
+# For any enquiry, please contact me @ dedong.xie@mail.utoronto.ca
 #####################################################################
 #
 # CSC258 Summer 2021 Assembly Final Project
