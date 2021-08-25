@@ -1,5 +1,5 @@
 #####################################################################
-# To avoid possible academical misconduct, 
+# To avoid possible academic misconduct, 
 # you should be notified that in case a similar project is assigned in the future, 
 # copy and paste code found on the Internet or GitHub is not permitted.
 # This code has been submitted to the course, so that if you use it in your project, you may fail the plagiarism test.
